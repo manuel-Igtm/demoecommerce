@@ -18,10 +18,8 @@ pipeline {
                 sh '''
                     echo "=== Project Structure ==="
                     ls -la ecommerce/
-                    echo "=== Python Files ==="
-                    find ecommerce/ -name "*.py" | head -10
                     echo "=== Requirements ==="
-                    cat ecommerce/requirements.txt || echo "No requirements.txt in ecommerce directory"
+                    cat ecommerce/requirements.txt
                 '''
             }
         }
@@ -30,10 +28,16 @@ pipeline {
             steps {
                 sh '''
                     cd ecommerce
+                    echo "Python version:"
                     python3 --version
-                    python3 -m venv venv
-                    source venv/bin/activate
-                    pip install --upgrade pip
+                    echo "Pip version:"
+                    pip3 --version || echo "pip3 not available, installing..."
+                    
+                    # Install python3-venv if not available
+                    apt-get update && apt-get install -y python3-venv || true
+                    
+                    # Create virtual environment using system Python
+                    python3 -m venv venv --system-site-packages || python3 -m venv venv || echo "Virtual environment creation failed, continuing with system Python"
                 '''
             }
         }
@@ -42,13 +46,20 @@ pipeline {
             steps {
                 sh '''
                     cd ecommerce
-                    source venv/bin/activate
-                    if [ -f requirements.txt ]; then
-                        pip install -r requirements.txt
+                    # Use virtual environment if available, otherwise system Python
+                    if [ -f "venv/bin/activate" ]; then
+                        source venv/bin/activate
+                        pip install --upgrade pip
                     else
-                        echo "Installing default Django packages..."
-                        pip install django djangorestframework django-cors-headers psycopg2-binary redis
+                        echo "Using system Python"
+                        pip3 install --upgrade pip || true
                     fi
+                    
+                    # Install requirements
+                    pip install -r requirements.txt
+                    
+                    echo "=== Installed Packages ==="
+                    pip list
                 '''
             }
         }
@@ -57,16 +68,16 @@ pipeline {
             steps {
                 sh '''
                     cd ecommerce
-                    source venv/bin/activate
-                    if [ -f manage.py ]; then
-                        echo "=== Django Check ==="
-                        python manage.py check
-                        echo "=== Migration Check ==="
-                        python manage.py makemigrations --check --dry-run
-                    else
-                        echo "manage.py not found in ecommerce directory"
-                        find . -name "manage.py" -exec echo "Found manage.py at: {}" \\;
+                    # Activate venv if available
+                    if [ -f "venv/bin/activate" ]; then
+                        source venv/bin/activate
                     fi
+                    
+                    echo "=== Django System Check ==="
+                    python manage.py check --fail-level WARNING
+                    
+                    echo "=== Migration Check ==="
+                    python manage.py makemigrations --check --dry-run
                 '''
             }
         }
@@ -75,13 +86,13 @@ pipeline {
             steps {
                 sh '''
                     cd ecommerce
-                    source venv/bin/activate
-                    if [ -f manage.py ]; then
-                        echo "=== Running Tests ==="
-                        python manage.py test --verbosity=2
-                    else
-                        echo "Skipping tests - manage.py not found"
+                    # Activate venv if available
+                    if [ -f "venv/bin/activate" ]; then
+                        source venv/bin/activate
                     fi
+                    
+                    echo "=== Running Tests ==="
+                    python manage.py test --verbosity=2
                 '''
             }
         }
@@ -90,12 +101,19 @@ pipeline {
             steps {
                 sh '''
                     cd ecommerce
-                    source venv/bin/activate
-                    pip install bandit safety
+                    # Activate venv if available
+                    if [ -f "venv/bin/activate" ]; then
+                        source venv/bin/activate
+                    fi
+                    
+                    echo "=== Installing Security Tools ==="
+                    pip install bandit safety || echo "Security tools installation failed"
+                    
                     echo "=== Security Check ==="
-                    safety check --short-report || true
-                    echo "=== Code Security Scan ==="
-                    bandit -r . -f html -o security_report.html || true
+                    safety check --short-report || echo "Safety check failed or found issues"
+                    
+                    echo "=== Bandit Security Scan ==="
+                    bandit -r . -f txt -o bandit_report.txt || echo "Bandit scan failed"
                 '''
             }
             post {
@@ -105,7 +123,7 @@ pipeline {
                         alwaysLinkToLastBuild: true,
                         keepAll: true,
                         reportDir: 'ecommerce',
-                        reportFiles: 'security_report.html',
+                        reportFiles: 'bandit_report.txt',
                         reportName: 'Security Report'
                     ]
                 }
@@ -119,17 +137,14 @@ pipeline {
             sh '''
                 echo "Workspace size:"
                 du -sh .
-                echo "Python environment:"
-                cd ecommerce && source venv/bin/activate && pip list
+                echo "=== Final Status ==="
             '''
         }
         success {
             echo "✅ Ecommerce CI Pipeline Succeeded!"
-            // Add notifications: slack, email, etc.
         }
         failure {
             echo "❌ Ecommerce CI Pipeline Failed!"
-            // Add failure notifications
         }
     }
 }
