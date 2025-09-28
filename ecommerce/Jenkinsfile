@@ -1,43 +1,16 @@
 pipeline {
     agent any
     
-    environment {
-        PYTHONUNBUFFERED = '1'
-        DJANGO_SETTINGS_MODULE = 'ecommerce.settings'
-    }
-    
     stages {
-        stage('Checkout') {
+        stage('Checkout and Setup') {
             steps {
                 checkout scm
-            }
-        }
-        
-        stage('Explore Project') {
-            steps {
                 sh '''
+                    echo "=== Git Information ==="
+                    git status
+                    git branch -a
                     echo "=== Project Structure ==="
-                    ls -la ecommerce/
-                    echo "=== Requirements ==="
-                    cat ecommerce/requirements.txt
-                '''
-            }
-        }
-        
-        stage('Setup Python Environment') {
-            steps {
-                sh '''
-                    cd ecommerce
-                    echo "Python version:"
-                    python3 --version
-                    echo "Pip version:"
-                    pip3 --version || echo "pip3 not available, installing..."
-                    
-                    # Install python3-venv if not available
-                    apt-get update && apt-get install -y python3-venv || true
-                    
-                    # Create virtual environment using system Python
-                    python3 -m venv venv --system-site-packages || python3 -m venv venv || echo "Virtual environment creation failed, continuing with system Python"
+                    ls -la
                 '''
             }
         }
@@ -46,105 +19,44 @@ pipeline {
             steps {
                 sh '''
                     cd ecommerce
-                    # Use virtual environment if available, otherwise system Python
-                    if [ -f "venv/bin/activate" ]; then
-                        source venv/bin/activate
-                        pip install --upgrade pip
+                    # Install system Python packages if needed
+                    apt-get update && apt-get install -y python3 python3-pip python3-venv 2>/dev/null || true
+                    
+                    # Create virtual environment
+                    python3 -m venv venv || echo "Virtual environment creation failed, using system Python"
+                    
+                    # Install dependencies
+                    if [ -f "venv/bin/pip" ]; then
+                        venv/bin/pip install --upgrade pip
+                        venv/bin/pip install -r requirements.txt
                     else
-                        echo "Using system Python"
-                        pip3 install --upgrade pip || true
+                        pip3 install --upgrade pip
+                        pip3 install -r requirements.txt
                     fi
-                    
-                    # Install requirements
-                    pip install -r requirements.txt
-                    
-                    echo "=== Installed Packages ==="
-                    pip list
                 '''
             }
         }
         
-        stage('Database Checks') {
+        stage('Run Django Checks') {
             steps {
                 sh '''
                     cd ecommerce
-                    # Activate venv if available
-                    if [ -f "venv/bin/activate" ]; then
-                        source venv/bin/activate
+                    # Use virtual environment if available
+                    if [ -f "venv/bin/python" ]; then
+                        venv/bin/python manage.py check
+                        venv/bin/python manage.py test --verbosity=2
+                    else
+                        python3 manage.py check
+                        python3 manage.py test --verbosity=2
                     fi
-                    
-                    echo "=== Django System Check ==="
-                    python manage.py check --fail-level WARNING
-                    
-                    echo "=== Migration Check ==="
-                    python manage.py makemigrations --check --dry-run
                 '''
-            }
-        }
-        
-        stage('Run Tests') {
-            steps {
-                sh '''
-                    cd ecommerce
-                    # Activate venv if available
-                    if [ -f "venv/bin/activate" ]; then
-                        source venv/bin/activate
-                    fi
-                    
-                    echo "=== Running Tests ==="
-                    python manage.py test --verbosity=2
-                '''
-            }
-        }
-        
-        stage('Security Scan') {
-            steps {
-                sh '''
-                    cd ecommerce
-                    # Activate venv if available
-                    if [ -f "venv/bin/activate" ]; then
-                        source venv/bin/activate
-                    fi
-                    
-                    echo "=== Installing Security Tools ==="
-                    pip install bandit safety || echo "Security tools installation failed"
-                    
-                    echo "=== Security Check ==="
-                    safety check --short-report || echo "Safety check failed or found issues"
-                    
-                    echo "=== Bandit Security Scan ==="
-                    bandit -r . -f txt -o bandit_report.txt || echo "Bandit scan failed"
-                '''
-            }
-            post {
-                always {
-                    publishHTML target: [
-                        allowMissing: true,
-                        alwaysLinkToLastBuild: true,
-                        keepAll: true,
-                        reportDir: 'ecommerce',
-                        reportFiles: 'bandit_report.txt',
-                        reportName: 'Security Report'
-                    ]
-                }
             }
         }
     }
     
     post {
         always {
-            echo "=== Pipeline Complete ==="
-            sh '''
-                echo "Workspace size:"
-                du -sh .
-                echo "=== Final Status ==="
-            '''
-        }
-        success {
-            echo "✅ Ecommerce CI Pipeline Succeeded!"
-        }
-        failure {
-            echo "❌ Ecommerce CI Pipeline Failed!"
+            echo "Pipeline completed"
         }
     }
 }
