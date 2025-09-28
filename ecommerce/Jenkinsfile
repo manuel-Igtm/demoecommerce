@@ -1,101 +1,12 @@
 pipeline {
     agent any
     
-    environment {
-        // Remove any problematic environment variables
-        PYTHON_VERSION = '3.9'
-    }
-    
     stages {
-        stage('Checkout') {
+        stage('Hello World') {
             steps {
-                checkout scm
+                echo "Hello from Jenkins!"
+                sh 'ls -la'
             }
-        }
-        
-        stage('List Project Structure') {
-            steps {
-                sh '''
-                    echo "Current directory:"
-                    pwd
-                    echo "Project structure:"
-                    ls -la
-                    echo "Ecommerce directory:"
-                    ls -la ecommerce/ || echo "ecommerce directory not found"
-                '''
-            }
-        }
-        
-        stage('Setup Python Virtual Environment') {
-            steps {
-                sh '''
-                    echo "Setting up Python environment..."
-                    python3 --version || python --version
-                    python3 -m venv venv || python -m venv venv
-                    source venv/bin/activate
-                    pip install --upgrade pip
-                '''
-            }
-        }
-        
-        stage('Install Dependencies') {
-            steps {
-                sh '''
-                    source venv/bin/activate
-                    if [ -f requirements.txt ]; then
-                        pip install -r requirements.txt
-                    else
-                        echo "requirements.txt not found, installing basic Django"
-                        pip install django djangorestframework
-                    fi
-                '''
-            }
-        }
-        
-        stage('Run Database Migrations') {
-            steps {
-                sh '''
-                    source venv/bin/activate
-                    if [ -f manage.py ]; then
-                        python manage.py makemigrations --check --dry-run
-                        python manage.py check
-                    else
-                        echo "manage.py not found"
-                    fi
-                '''
-            }
-        }
-        
-        stage('Run Tests') {
-            steps {
-                sh '''
-                    source venv/bin/activate
-                    if [ -f manage.py ]; then
-                        python manage.py test --verbosity=2
-                    else
-                        echo "No tests to run - manage.py not found"
-                    fi
-                '''
-            }
-            post {
-                always {
-                    junit '**/test-reports/*.xml'  # Only if you generate test reports
-                }
-            }
-        }
-    }
-    
-    post {
-        always {
-            echo "Pipeline completed - cleaning up"
-        }
-        success {
-            echo "✅ Pipeline succeeded!"
-            // You can add notifications here
-        }
-        failure {
-            echo "❌ Pipeline failed!"
-            // You can add failure notifications here
         }
     }
 }
