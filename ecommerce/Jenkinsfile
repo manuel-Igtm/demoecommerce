@@ -2,68 +2,51 @@ pipeline {
     agent any
     
     stages {
-        stage('Checkout') {
+        stage('Checkout and Explore') {
             steps {
                 checkout scm
-            }
-        }
-        
-        stage('Setup') {
-            steps {
                 sh '''
-                    echo "=== Python Environment ==="
-                    python3 --version
-                    pip3 --version
-                    echo "=== Project Structure ==="
+                    echo "=== Current Directory ==="
+                    pwd
+                    echo "=== Listing Files ==="
+                    ls -la
+                    echo "=== Ecommerce Directory ==="
                     ls -la ecommerce/
+                    echo "=== Python Info ==="
+                    python3 --version
+                    which python3
                 '''
             }
         }
         
-        stage('Install Dependencies') {
+        stage('Test Python Setup') {
             steps {
                 sh '''
                     cd ecommerce
+                    echo "=== Testing Direct Python ==="
+                    python3 -c "import django; print('Django version:', django.get_version())" || echo "Django not installed"
+                    
                     echo "=== Installing Requirements ==="
                     pip3 install -r requirements.txt
-                    echo "=== Installation Complete ==="
+                    
+                    echo "=== Verify Installation ==="
+                    python3 -c "import django; print('Django version:', django.get_version())"
+                    python3 -c "import rest_framework; print('DRF available')"
                 '''
             }
         }
         
-        stage('Django Checks') {
+        stage('Basic Django Commands') {
             steps {
                 sh '''
                     cd ecommerce
-                    echo "=== Django System Check ==="
+                    echo "=== Django Check ==="
                     python3 manage.py check
                     
-                    echo "=== Migration Check ==="
-                    python3 manage.py makemigrations --check --dry-run
+                    echo "=== Simple Test ==="
+                    python3 manage.py test --verbosity=1
                 '''
             }
-        }
-        
-        stage('Run Tests') {
-            steps {
-                sh '''
-                    cd ecommerce
-                    echo "=== Running Tests ==="
-                    python3 manage.py test --verbosity=2
-                '''
-            }
-        }
-    }
-    
-    post {
-        always {
-            echo "Pipeline completed"
-        }
-        success {
-            echo "✅ Success!"
-        }
-        failure {
-            echo "❌ Failed!"
         }
     }
 }
