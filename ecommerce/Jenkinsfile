@@ -1,52 +1,98 @@
 pipeline {
     agent any
     
+    environment {
+        PYTHONUNBUFFERED = '1'
+        DJANGO_SETTINGS_MODULE = 'ecommerce.settings'
+    }
+    
     stages {
-        stage('Checkout and Explore') {
+        stage('Checkout') {
             steps {
                 checkout scm
+            }
+        }
+        
+        stage('Explore Project') {
+            steps {
                 sh '''
-                    echo "=== Current Directory ==="
-                    pwd
-                    echo "=== Listing Files ==="
-                    ls -la
-                    echo "=== Ecommerce Directory ==="
+                    echo "=== Project Structure ==="
                     ls -la ecommerce/
-                    echo "=== Python Info ==="
+                    echo "=== Python Environment ==="
                     python3 --version
-                    which python3
+                    pip3 --version
                 '''
             }
         }
         
-        stage('Test Python Setup') {
+        stage('Setup Python Environment') {
             steps {
                 sh '''
                     cd ecommerce
-                    echo "=== Testing Direct Python ==="
-                    python3 -c "import django; print('Django version:', django.get_version())" || echo "Django not installed"
+                    echo "=== Creating Virtual Environment ==="
+                    python3 -m venv venv
+                    echo "=== Virtual Environment Created ==="
                     
+                    # Use . instead of source for sh shell
+                    . venv/bin/activate
+                    echo "=== Virtual Environment Activated ==="
+                    
+                    pip install --upgrade pip
+                    echo "=== Pip Upgraded ==="
+                '''
+            }
+        }
+        
+        stage('Install Dependencies') {
+            steps {
+                sh '''
+                    cd ecommerce
+                    # Activate virtual environment using . (dot) command
+                    . venv/bin/activate
                     echo "=== Installing Requirements ==="
-                    pip3 install -r requirements.txt
-                    
-                    echo "=== Verify Installation ==="
-                    python3 -c "import django; print('Django version:', django.get_version())"
-                    python3 -c "import rest_framework; print('DRF available')"
+                    pip install -r requirements.txt
+                    echo "=== Dependencies Installed ==="
                 '''
             }
         }
         
-        stage('Basic Django Commands') {
+        stage('Database Checks') {
             steps {
                 sh '''
                     cd ecommerce
-                    echo "=== Django Check ==="
-                    python3 manage.py check
+                    # Activate virtual environment
+                    . venv/bin/activate
+                    echo "=== Django System Check ==="
+                    python manage.py check --fail-level WARNING
                     
-                    echo "=== Simple Test ==="
-                    python3 manage.py test --verbosity=1
+                    echo "=== Migration Check ==="
+                    python manage.py makemigrations --check --dry-run
                 '''
             }
+        }
+        
+        stage('Run Tests') {
+            steps {
+                sh '''
+                    cd ecommerce
+                    # Activate virtual environment
+                    . venv/bin/activate
+                    echo "=== Running Tests ==="
+                    python manage.py test --verbosity=2
+                '''
+            }
+        }
+    }
+    
+    post {
+        always {
+            echo "=== Pipeline Complete ==="
+        }
+        success {
+            echo "✅ Ecommerce CI Pipeline Succeeded!"
+        }
+        failure {
+            echo "❌ Ecommerce CI Pipeline Failed!"
         }
     }
 }
