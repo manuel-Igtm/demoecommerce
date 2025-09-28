@@ -29,3 +29,26 @@ pytest-cov
 fakeredis
 factory-boy
 django-graphql-jwt
+# GraphQL / DRF / Docs
+graphene-django
+django-graphql-jwt
+drf-spectacular
+
+# Redis / Async / HTTP
+django-redis
+aiohttp
+redis
+
+# Testing / Factory
+factory_boy
+pytest
+pytest-django
+faker
+
+# Lint/Security
+flake8
+bandit
+
+# For deployment & Docker
+gunicorn
+psycopg2-binary
