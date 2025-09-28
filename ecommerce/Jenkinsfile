@@ -1,12 +1,135 @@
 pipeline {
     agent any
     
+    environment {
+        PYTHONUNBUFFERED = '1'
+        DJANGO_SETTINGS_MODULE = 'ecommerce.settings'
+    }
+    
     stages {
-        stage('Hello World') {
+        stage('Checkout') {
             steps {
-                echo "Hello from Jenkins!"
-                sh 'ls -la'
+                checkout scm
             }
+        }
+        
+        stage('Explore Project') {
+            steps {
+                sh '''
+                    echo "=== Project Structure ==="
+                    ls -la ecommerce/
+                    echo "=== Python Files ==="
+                    find ecommerce/ -name "*.py" | head -10
+                    echo "=== Requirements ==="
+                    cat ecommerce/requirements.txt || echo "No requirements.txt in ecommerce directory"
+                '''
+            }
+        }
+        
+        stage('Setup Python Environment') {
+            steps {
+                sh '''
+                    cd ecommerce
+                    python3 --version
+                    python3 -m venv venv
+                    source venv/bin/activate
+                    pip install --upgrade pip
+                '''
+            }
+        }
+        
+        stage('Install Dependencies') {
+            steps {
+                sh '''
+                    cd ecommerce
+                    source venv/bin/activate
+                    if [ -f requirements.txt ]; then
+                        pip install -r requirements.txt
+                    else
+                        echo "Installing default Django packages..."
+                        pip install django djangorestframework django-cors-headers psycopg2-binary redis
+                    fi
+                '''
+            }
+        }
+        
+        stage('Database Checks') {
+            steps {
+                sh '''
+                    cd ecommerce
+                    source venv/bin/activate
+                    if [ -f manage.py ]; then
+                        echo "=== Django Check ==="
+                        python manage.py check
+                        echo "=== Migration Check ==="
+                        python manage.py makemigrations --check --dry-run
+                    else
+                        echo "manage.py not found in ecommerce directory"
+                        find . -name "manage.py" -exec echo "Found manage.py at: {}" \\;
+                    fi
+                '''
+            }
+        }
+        
+        stage('Run Tests') {
+            steps {
+                sh '''
+                    cd ecommerce
+                    source venv/bin/activate
+                    if [ -f manage.py ]; then
+                        echo "=== Running Tests ==="
+                        python manage.py test --verbosity=2
+                    else
+                        echo "Skipping tests - manage.py not found"
+                    fi
+                '''
+            }
+        }
+        
+        stage('Security Scan') {
+            steps {
+                sh '''
+                    cd ecommerce
+                    source venv/bin/activate
+                    pip install bandit safety
+                    echo "=== Security Check ==="
+                    safety check --short-report || true
+                    echo "=== Code Security Scan ==="
+                    bandit -r . -f html -o security_report.html || true
+                '''
+            }
+            post {
+                always {
+                    publishHTML target: [
+                        allowMissing: true,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: 'ecommerce',
+                        reportFiles: 'security_report.html',
+                        reportName: 'Security Report'
+                    ]
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            echo "=== Pipeline Complete ==="
+            sh '''
+                echo "Workspace size:"
+                du -sh .
+                echo "Python environment:"
+                cd ecommerce && source venv/bin/activate && pip list
+            '''
+        }
+        success {
+            echo "✅ Ecommerce CI Pipeline Succeeded!"
+            // Add notifications: slack, email, etc.
+        }
+        failure {
+            echo "❌ Ecommerce CI Pipeline Failed!"
+            // Add failure notifications
         }
     }
 }
