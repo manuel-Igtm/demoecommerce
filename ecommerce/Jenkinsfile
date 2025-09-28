@@ -1,0 +1,92 @@
+pipeline {
+  agent any
+
+  environment {
+    IMAGE_NAME = "your-dockerhub-username/ecommerce-web"
+    IMAGE_TAG  = "${env.BUILD_NUMBER ?: 'local'}"
+    DOCKERHUB_CREDENTIALS = 'dockerhub-creds'   // set this in Jenkins (username/password)
+    RENDER_API_KEY = credentials('render-api-key') // set in Jenkins (secret text)
+    RENDER_SERVICE_ID = 'srv-your-render-service-id' // set as string here or in Jenkins env
+  }
+
+  options {
+    skipDefaultCheckout(false)
+    timestamps()
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+      }
+    }
+
+    stage('Lint / Safety') {
+      parallel {
+        stage('Python Lint') {
+          steps {
+            sh 'pip install -r requirements.txt'
+            sh 'flake8 || true'    // don't fail the build unless you want to
+          }
+        }
+        stage('Security Scan (bandit)') {
+          steps {
+            sh 'pip install bandit'
+            sh 'bandit -r . -ll -ii || true'
+          }
+        }
+      }
+    }
+
+    stage('Unit Tests') {
+      steps {
+        sh 'pip install -r requirements.txt'
+        sh 'pytest --maxfail=1 -q'
+      }
+      post {
+        always {
+          junit allowEmptyResults: true, testResults: '**/test-results.xml'
+        }
+      }
+    }
+
+    stage('Build Docker Image') {
+      steps {
+        script {
+          docker.withRegistry('', "${DOCKERHUB_CREDENTIALS}") {
+            def img = docker.build("${IMAGE_NAME}:${IMAGE_TAG}")
+            // Optionally push
+            // img.push()
+          }
+        }
+      }
+    }
+
+    stage('Deploy (Render)') {
+      when {
+        branch 'main'
+      }
+      steps {
+        script {
+          // Trigger a deploy via Render's API
+          sh """
+            curl -sS -X POST "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys" \
+              -H "Authorization: Bearer ${RENDER_API_KEY}" \
+              -H "Content-Type: application/json" \
+              -d '{"clearCache": true}'
+          """
+        }
+      }
+    }
+  }
+
+  post {
+    success {
+      echo "Pipeline succeeded."
+    }
+    failure {
+      echo "Pipeline failed."
+    }
+  }
+}
